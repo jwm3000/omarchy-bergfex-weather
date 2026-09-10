@@ -66,6 +66,7 @@ Panel {
       root.bar.centerHoverRevealSuppressed = value
   }
 
+  property bool showNarrative: false
   property var report: null
   property string errorMessage: ""
   property string searchMessage: ""
@@ -212,6 +213,7 @@ Panel {
     function hide(): void { root.close() }
     function toggle(): void { root.toggle() }
     function edit(): void { root.openFromHotkey(); root.startEditingLocation() }
+    function toggleReport(): void { root.showNarrative = !root.showNarrative; root.openFromHotkey() }
   }
 
   KeyboardPanel {
@@ -275,6 +277,10 @@ Panel {
           Row {
             anchors.verticalCenter: parent.verticalCenter
             spacing: Style.space(2)
+            TapHandler {
+              onTapped: root.showNarrative = !root.showNarrative
+            }
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
 
             Text {
               id: tempBig
@@ -552,7 +558,7 @@ Panel {
         wrapMode: Text.WordWrap
         textFormat: Text.PlainText
         visible: !!root.report
-        text: root.report ? root.report.time + " · " + root.report.description + "\n" + root.report.source + " · Abgerufen " + Qt.formatDateTime(new Date(root.report.fetchedAt * 1000), "dd.MM. HH:mm") + (root.report.stale ? " · VERALTET" : "") : ""
+        text: root.report ? root.report.time + " · " + root.report.description + "\nBergfex · Abgerufen " + Qt.formatDateTime(new Date(root.report.fetchedAt * 1000), "dd.MM. HH:mm") + (root.report.stale ? " · VERALTET" : "") : ""
         color: Qt.darker(root.bar.foreground, 1.4)
         font.family: root.bar.fontFamily
         font.pixelSize: Style.font.bodySmall
@@ -632,6 +638,37 @@ Panel {
               }
             }
           }
+        }
+      }
+      Column {
+        width: parent.width
+        visible: root.showNarrative
+        spacing: Style.space(10)
+        Rectangle {
+          width: parent.width
+          height: Style.spacing.hairline
+          color: root.bar.foreground
+          opacity: 0.12
+        }
+        Text {
+          width: parent.width
+          wrapMode: Text.WordWrap
+          textFormat: Text.PlainText
+          text: root.report && root.report.narrative ? root.report.narrative.title : ""
+          visible: text !== ""
+          color: root.bar.foreground
+          font.family: root.bar.fontFamily
+          font.pixelSize: Style.font.body
+          font.bold: true
+        }
+        Text {
+          width: parent.width
+          wrapMode: Text.WordWrap
+          textFormat: Text.PlainText
+          text: root.report && root.report.narrative && root.report.narrative.text ? root.report.narrative.text : "Für diesen Ort ist derzeit kein Wetterbericht verfügbar."
+          color: root.bar.foreground
+          font.family: root.bar.fontFamily
+          font.pixelSize: Style.font.body
         }
       }
     }

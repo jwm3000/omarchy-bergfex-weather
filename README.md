@@ -10,6 +10,9 @@ Omarchy-Plug-ins als Grundlage. Benötigt Python 3 und curl.
   Bergfex-Suchtreffer auswählen. Pfeiltasten und Enter funktionieren ebenfalls.
 - Alternativ eine vollständige `https://www.bergfex.at/…/wetter/`-Adresse eingeben.
 - Mittelklick aktualisiert sofort, Rechtsklick öffnet die Bergfex-Seite.
+- Klick auf die große Temperatur blendet den regionalen Wetterbericht für heute
+  unterhalb der Vorhersage ein oder aus. Der Text stammt von der gewählten
+  Bergfex-Ortsseite und wird zusammen mit den Wetterdaten aktualisiert.
 - Escape schließt die Ortsauswahl bzw. das Fenster.
 
 Das Fenster zeigt Bergfex' aktuelle stündliche Prognose, Regenwahrscheinlichkeit,
@@ -63,7 +66,7 @@ und Wettercache in den oben genannten XDG-Verzeichnissen beschränkt.
 
 `python3 -m unittest -v` prüft Parser, Suche, Cache und Fehlerfälle.
 `omarchy plugin validate .` prüft das Manifest.
-`qmllint -I /usr/share/omarchy/shell Panel.qml BarWidget.qml` prüft QML.
+QML wird in der laufenden Omarchy-Shell geprüft; ein eigenständiger Qt-6-qmllint-Lauf benötigt zusätzlich die von Quickshell bereitgestellten `qs.*`-Importe.
 
 Der Adapter liest die öffentliche Bergfex-Websuche und das HTML der Wetterseite;
 er nutzt keine garantierte öffentliche Wetter-API. Änderungen am Seitenaufbau

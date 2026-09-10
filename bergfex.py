@@ -116,6 +116,22 @@ def icon(description, symbol="", night=False):
     return ""
 
 
+def parse_narrative(root):
+    """Read today's regional report, stopping at the next heading."""
+    nodes = root.find()
+    for index, node in enumerate(nodes):
+        if node.tag != "h2" or not re.search(r"\bHeute\s*,", node.text()):
+            continue
+        for following in nodes[index + 1:]:
+            if following.tag in {"h1", "h2"}:
+                break
+            if "txt_markup" in following.attrs.get("class", "").split():
+                paragraphs = following.find(tag="p")
+                body = "\n\n".join(p.text() for p in paragraphs) if paragraphs else following.text()
+                return {"title": node.text(), "text": body}
+    return {"title": "", "text": ""}
+
+
 def parse_weather(html, url):
     root = Tree(html).root
     current = root.one("forecast-current")
@@ -136,7 +152,7 @@ def parse_weather(html, url):
         days.append({"date": "-".join([date[3], date[2], date[1]]), "max": number(node.one("tmax").text()), "min": number(node.one("tmin").text()), "icon": icon(image.attrs.get("title", ""), symbol), "wind": node.one("ff").text(), "sun": node.one("sonne").text(), "rain": node.one("rrp").text()})
     if not name or len(days) < 2:
         raise ValueError("Das Bergfex-Seitenformat wird noch nicht unterstützt.")
-    return {"name": name, "url": url, "temperature": temperature, "description": description, "time": stamp.split(" - ")[0], "rain": rain[1] + "%" if rain else "—", "icon": icon(description, night="/night/" in hour_img.attrs.get("src", "")), "days": days, "fetchedAt": int(time.time()), "source": "Bergfex · GeoSphere Austria" if "GeoSphere Austria/bergfex" in html else "Bergfex"}
+    return {"name": name, "url": url, "temperature": temperature, "description": description, "time": stamp.split(" - ")[0], "rain": rain[1] + "%" if rain else "—", "icon": icon(description, night="/night/" in hour_img.attrs.get("src", "")), "days": days, "fetchedAt": int(time.time()), "source": "Bergfex", "narrative": parse_narrative(root)}
 
 
 def parse_search(raw):
@@ -163,7 +179,7 @@ def forecast(url, force=False):
     url = weather_url(url)
     cache_file = CACHE / (hashlib.sha256(url.encode()).hexdigest() + ".json")
     cached = read_json(cache_file)
-    if not force and cached and 0 <= time.time() - cached.get("fetchedAt", 0) < 900:
+    if not force and cached and "narrative" in cached and 0 <= time.time() - cached.get("fetchedAt", 0) < 900:
         return cached
     try:
         report = parse_weather(fetch(url), url)

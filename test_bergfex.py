@@ -17,6 +17,14 @@ URL = 'https://www.bergfex.at/sommer/testort/wetter/'
 
 
 class AdapterTests(unittest.TestCase):
+    def test_regional_report_preserves_paragraphs(self):
+        tree = b.Tree('<h2>Steiermark - Heute, <span>Donnerstag</span></h2><div class="txt_markup"><p>Erster Absatz.</p><p>Zweiter Absatz.</p></div><h2>Morgen</h2><div class="txt_markup">Anderer Bericht.</div>')
+        self.assertEqual(b.parse_narrative(tree.root), {'title': 'Steiermark - Heute, Donnerstag', 'text': 'Erster Absatz.\n\nZweiter Absatz.'})
+
+    def test_missing_report_does_not_use_tomorrow(self):
+        tree = b.Tree('<h2>Heute, Donnerstag</h2><h2>Morgen</h2><div class="txt_markup">Morgenbericht.</div>')
+        self.assertEqual(b.parse_narrative(tree.root), {'title': '', 'text': ''})
+
     def test_temperatures_dates_and_zero_rain(self):
         report = b.parse_weather(HTML, URL)
         self.assertEqual(report['temperature'], -2.5)
