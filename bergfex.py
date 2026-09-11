@@ -9,7 +9,7 @@ import re
 import stat
 import zlib
 import sys
-import tempfile
+import secrets
 import time
 from urllib.parse import urljoin, urlsplit, urlencode
 from urllib.request import Request, build_opener, HTTPRedirectHandler
@@ -140,16 +140,63 @@ def fetch(url):
         raise ValueError("Bergfex-Abruf fehlgeschlagen.") from error
 
 
-def atomic_json(path, data):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, name = tempfile.mkstemp(dir=path.parent, prefix=".tmp-")
+def protected_directory(path):
+    """Walk once, retaining directory identities for all later mutations."""
+    parts = Path(os.path.abspath(path)).parts
+    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
-        with os.fdopen(fd, "w") as file:
-            json.dump(data, file, ensure_ascii=False)
-        os.replace(name, path)
+        for part in parts[1:]:
+            try:
+                os.mkdir(part, mode=0o700, dir_fd=fd)
+            except FileExistsError:
+                pass
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = child
+            info = os.fstat(fd)
+            sticky_root = info.st_uid == 0 and bool(info.st_mode & stat.S_ISVTX)
+            if info.st_uid not in {0, os.getuid()} or (info.st_mode & 0o022 and not sticky_root):
+                raise ValueError("Unprotected directory")
+        info = os.fstat(fd)
+        if info.st_uid != os.getuid() or info.st_mode & 0o022:
+            raise ValueError("Unprotected destination directory")
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def atomic_json(path, data, limit=JSON_LIMIT):
+    payload = bytearray()
+    for chunk in json.JSONEncoder(ensure_ascii=False).iterencode(data):
+        encoded = chunk.encode("utf-8")
+        if len(payload) + len(encoded) > limit:
+            raise ValueError("Serialized write size limit exceeded")
+        payload.extend(encoded)
+    directory = protected_directory(path.parent)
+    name = ".tmp-" + secrets.token_hex(16)
+    created = False
+    try:
+        try:
+            existing = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
+        except FileNotFoundError:
+            existing = None
+        if existing and (not stat.S_ISREG(existing.st_mode) or existing.st_uid != os.getuid()):
+            raise ValueError("Unsafe destination file")
+        fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory)
+        created = True
+        with os.fdopen(fd, "wb") as file:
+            file.write(payload)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(name, path.name, src_dir_fd=directory, dst_dir_fd=directory)
     finally:
-        if os.path.exists(name):
-            os.unlink(name)
+        if created:
+            try:
+                os.unlink(name, dir_fd=directory)
+            except FileNotFoundError:
+                pass
+        os.close(directory)
 
 
 def read_json(path, default=None, limit=JSON_LIMIT):
@@ -286,7 +333,7 @@ def main(args):
         if len(args) != 2 or args[1] not in {"true", "false"}:
             raise ValueError("Expected true or false")
         preferences = {"showBarTemperature": args[1] == "true"}
-        atomic_json(PREFERENCES, preferences)
+        atomic_json(PREFERENCES, preferences, limit=STATE_LIMIT)
         return preferences
     if action == "search":
         query = args[1].strip()
@@ -301,7 +348,7 @@ def main(args):
         report = forecast(url)
         if report.get("stale"):
             raise ValueError("Standort konnte nicht geladen werden. Bitte erneut versuchen.")
-        atomic_json(STATE, {"name": report["name"], "url": url})
+        atomic_json(STATE, {"name": report["name"], "url": url}, limit=STATE_LIMIT)
         return {"report": report}
     if action == "weather":
         location = read_json(STATE, {}, limit=STATE_LIMIT)

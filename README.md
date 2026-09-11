@@ -65,6 +65,23 @@ Keine Anmeldung, kein API-Schlüssel, keine zusätzlichen Python-Pakete und kein
 Administratorrechte erforderlich. Schreibzugriffe sind auf den eigenen Standort
 und Wettercache in den oben genannten XDG-Verzeichnissen beschränkt.
 
+## Geschützter Helper-Start und Schreibzugriff
+
+Alle QML-Aufrufe verwenden `/usr/bin/python3 -I` (keine Interpreter-Suche über
+PATH und keine PYTHONPATH-/User-Site-Imports). Der eingebettete Launcher prüft
+Pfad, Eigentümer, Dateityp, Schreibrechte und Größe des gebündelten `bergfex.py`
+über Dateideskriptoren ohne Symlink-Verfolgung und führt die gelesenen Bytes aus.
+`/usr/bin/timeout` aus GNU coreutils begrenzt jeden Prozess unabhängig auf
+35 Sekunden mit SIGTERM und weiteren 2 Sekunden bis SIGKILL.
+
+Schreibvorgänge öffnen eine geschützte Verzeichniskette einmal. Temporärdatei,
+atomarer Austausch und Aufräumen verwenden denselben Verzeichnisdeskriptor.
+Symlink-Eltern, fremde Eigentümer und ungeschützte Verzeichnisse werden abgelehnt.
+Root-eigene Sticky-Verzeichnisse wie `/tmp` dürfen nur als Vorfahren dienen;
+das Zielverzeichnis muss dem Benutzer gehören und darf nicht gruppen- oder
+weltbeschreibbar sein. Serialisierte Cache-Daten sind auf 256 KiB, Standort und
+Anzeigeoptionen auf 16 KiB begrenzt, bevor die Datei angelegt wird.
+
 ## Ressourcenlimits
 
 Der HTTPS-Abruf verwendet einen begrenzten Python-Stream: höchstens 1 MiB

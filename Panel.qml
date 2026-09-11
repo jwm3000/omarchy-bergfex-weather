@@ -3,6 +3,7 @@ import Quickshell
 import Quickshell.Io
 import qs.Commons
 import qs.Ui
+import "HelperLaunch.js" as HelperLaunch
 
 Panel {
   id: root
@@ -69,7 +70,7 @@ Panel {
   property bool showBarTemperature: false
   Process {
     id: preferencesProc
-    command: ["python3", root.helper, "preferences"]
+    command: HelperLaunch.command(root.helper, ["preferences"])
     running: true
     stdout: StdioCollector {
       onStreamFinished: {
@@ -83,7 +84,7 @@ Panel {
   }
   function toggleBarTemperature() {
     if (preferencesProc.running) return
-    preferencesProc.command = ["python3", root.helper, "set-bar-temperature", showBarTemperature ? "false" : "true"]
+    preferencesProc.command = HelperLaunch.command(root.helper, ["set-bar-temperature", showBarTemperature ? "false" : "true"])
     preferencesProc.running = true
   }
   property bool showNarrative: false
@@ -111,8 +112,8 @@ Panel {
   function refresh(force) {
     if (forecastProc.running || savingLocation) return
     activeAction = "weather"
-    forecastProc.command = ["python3", helper, "weather"]
-    if (force === true) forecastProc.command = ["python3", helper, "weather", "--force"]
+    forecastProc.command = HelperLaunch.command(helper, ["weather"])
+    if (force === true) forecastProc.command = HelperLaunch.command(helper, ["weather", "--force"])
     forecastProc.running = true
   }
 
@@ -148,7 +149,7 @@ Panel {
     savingLocation = true
     errorMessage = ""
     activeAction = "select"
-    forecastProc.command = ["python3", helper, "select", suggestion.url]
+    forecastProc.command = HelperLaunch.command(helper, ["select", suggestion.url])
     forecastProc.running = true
   }
 
@@ -162,7 +163,7 @@ Panel {
     }
     geocodeActiveQuery = query
     searchMessage = "Suche läuft…"
-    geocodeProc.command = ["python3", helper, "search", query]
+    geocodeProc.command = HelperLaunch.command(helper, ["search", query])
     geocodeProc.running = true
   }
 
@@ -199,6 +200,7 @@ Panel {
     }
     onExited: function(code) {
       root.savingLocation = false
+      if (code === 124 || code === 137) root.errorMessage = "Zeitlimit beim Wetterabruf überschritten."
       if (code !== 0 && !root.errorMessage) root.errorMessage = "Bergfex-Abruf fehlgeschlagen."
     }
   }

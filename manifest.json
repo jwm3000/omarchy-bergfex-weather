@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.jwm3000.bergfex-weather",
   "name": "Bergfex Wetter",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "author": "jwm3000",
   "description": "Bergfex-Wetter mit Ortssuche und Vorhersage",
   "kinds": [
