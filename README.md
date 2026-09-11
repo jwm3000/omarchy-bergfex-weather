@@ -13,6 +13,9 @@ Omarchy-Plug-ins als Grundlage. Benötigt Python 3 (nur Standardbibliothek).
 - Klick auf die große Temperatur blendet den regionalen Wetterbericht für heute
   unterhalb der Vorhersage ein oder aus. Der Text stammt von der gewählten
   Bergfex-Ortsseite und wird zusammen mit den Wetterdaten aktualisiert.
+- In der Ortssuche lässt sich „Temperatur in der Leiste“ einschalten. Standardmäßig
+  ausgeschaltet; die Auswahl bleibt nach einem Neustart erhalten. Aktiviert steht
+  die Temperatur rechts neben dem Wettersymbol.
 - Escape schließt die Ortsauswahl bzw. das Fenster.
 
 Das Fenster zeigt Bergfex' aktuelle stündliche Prognose, Regenwahrscheinlichkeit,
@@ -23,6 +26,7 @@ Ein neuer Ort wird erst nach erfolgreichem Laden gespeichert.
 
 Standort: `$XDG_STATE_HOME/omarchy/bergfex-weather/location.json`
 (Standard: `~/.local/state/omarchy/bergfex-weather/location.json`).
+Anzeigeoptionen: `preferences.json` im selben Verzeichnis wie der Standort.
 Cache: `$XDG_CACHE_HOME/omarchy/bergfex-weather/`.
 
 ## Installation

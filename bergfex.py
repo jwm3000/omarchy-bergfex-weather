@@ -23,6 +23,7 @@ TREE_DEPTH = 96
 
 BASE = "https://www.bergfex.at"
 STATE = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "omarchy/bergfex-weather/location.json"
+PREFERENCES = STATE.with_name("preferences.json")
 CACHE = Path(os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))) / "omarchy/bergfex-weather"
 
 
@@ -279,6 +280,14 @@ def forecast(url, force=False):
 
 def main(args):
     action = args[0]
+    if action == "preferences":
+        return {"showBarTemperature": read_json(PREFERENCES, {}, limit=STATE_LIMIT).get("showBarTemperature") is True}
+    if action == "set-bar-temperature":
+        if len(args) != 2 or args[1] not in {"true", "false"}:
+            raise ValueError("Expected true or false")
+        preferences = {"showBarTemperature": args[1] == "true"}
+        atomic_json(PREFERENCES, preferences)
+        return preferences
     if action == "search":
         query = args[1].strip()
         if query.startswith("https://"):

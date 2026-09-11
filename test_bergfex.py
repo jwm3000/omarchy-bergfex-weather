@@ -21,6 +21,15 @@ URL = 'https://www.bergfex.at/sommer/testort/wetter/'
 
 
 class AdapterTests(unittest.TestCase):
+    def test_temperature_preference_defaults_and_persists(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(b, "PREFERENCES", Path(directory) / "preferences.json"):
+            self.assertFalse(b.main(["preferences"])["showBarTemperature"])
+            b.main(["set-bar-temperature", "true"])
+            self.assertTrue(b.main(["preferences"])["showBarTemperature"])
+            b.main(["set-bar-temperature", "false"])
+            self.assertFalse(b.main(["preferences"])["showBarTemperature"])
+            with self.assertRaises(ValueError): b.main(["set-bar-temperature", "invalid"])
+
     def test_regional_report_preserves_paragraphs(self):
         tree = b.Tree('<h2>Steiermark - Heute, <span>Donnerstag</span></h2><div class="txt_markup"><p>Erster Absatz.</p><p>Zweiter Absatz.</p></div><h2>Morgen</h2><div class="txt_markup">Anderer Bericht.</div>')
         self.assertEqual(b.parse_narrative(tree.root), {'title': 'Steiermark - Heute, Donnerstag', 'text': 'Erster Absatz.\n\nZweiter Absatz.'})

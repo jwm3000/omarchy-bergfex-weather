@@ -66,6 +66,26 @@ Panel {
       root.bar.centerHoverRevealSuppressed = value
   }
 
+  property bool showBarTemperature: false
+  Process {
+    id: preferencesProc
+    command: ["python3", root.helper, "preferences"]
+    running: true
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try {
+          var data = JSON.parse(text)
+          if (data.error) root.errorMessage = data.error
+          else root.showBarTemperature = data.showBarTemperature === true
+        } catch (e) { root.errorMessage = "Einstellung konnte nicht geladen werden." }
+      }
+    }
+  }
+  function toggleBarTemperature() {
+    if (preferencesProc.running) return
+    preferencesProc.command = ["python3", root.helper, "set-bar-temperature", showBarTemperature ? "false" : "true"]
+    preferencesProc.running = true
+  }
   property bool showNarrative: false
   property var report: null
   property string errorMessage: ""
@@ -213,6 +233,7 @@ Panel {
     function hide(): void { root.close() }
     function toggle(): void { root.toggle() }
     function edit(): void { root.openFromHotkey(); root.startEditingLocation() }
+    function toggleTemperature(): void { root.toggleBarTemperature() }
     function toggleReport(): void { root.showNarrative = !root.showNarrative; root.openFromHotkey() }
   }
 
@@ -473,6 +494,31 @@ Panel {
               }
             }
           }
+        }
+      }
+
+      Item {
+        visible: root.editingLocation
+        width: parent.width
+        height: barTemperatureSwitch.implicitHeight
+        Text {
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(16)
+          anchors.right: barTemperatureSwitch.left
+          anchors.verticalCenter: parent.verticalCenter
+          text: "Temperatur in der Leiste"
+          color: root.bar.foreground
+          font.family: root.bar.fontFamily
+          font.pixelSize: Style.font.body
+        }
+        ToggleSwitch {
+          id: barTemperatureSwitch
+          anchors.right: parent.right
+          anchors.rightMargin: Style.space(16)
+          checked: root.showBarTemperature
+          busy: preferencesProc.running
+          foreground: root.bar.foreground
+          onToggled: root.toggleBarTemperature()
         }
       }
 

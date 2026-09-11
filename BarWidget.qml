@@ -69,7 +69,38 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: panelLoader.item ? panelLoader.item.label : ""
-    slotSize: Style.bar.statusSlot
+    readonly property string temperature: panelLoader.item && panelLoader.item.showBarTemperature && panelLoader.item.reportTempNum !== "" ? panelLoader.item.reportTempNum + "°" : ""
+    slotSize: Style.bar.statusSlot + (temperature !== "" ? temperatureMetrics.width + Style.space(6) : 0)
+    TextMetrics {
+      id: temperatureMetrics
+      text: button.temperature
+      font.family: button.fontFamily
+      font.pixelSize: Style.font.body
+    }
+    iconComponent: Component {
+      Row {
+        anchors.centerIn: parent
+        spacing: button.temperature !== "" ? Style.space(6) : 0
+        OpticalGlyph {
+          width: Style.bar.iconCanvas
+          height: Style.bar.iconCanvas
+          text: button.text
+          fontFamily: button.fontFamily
+          fontSize: Style.bar.iconFont
+          color: button.foreground
+          anchors.verticalCenter: parent.verticalCenter
+        }
+        Text {
+          visible: button.temperature !== ""
+          text: button.temperature
+          textFormat: Text.PlainText
+          font.family: button.fontFamily
+          font.pixelSize: Style.font.body
+          color: button.foreground
+          anchors.verticalCenter: parent.verticalCenter
+        }
+      }
+    }
     // Tooltip suppressed because the panel is the detail view.
     tooltipText: ""
 
