@@ -1,17 +1,25 @@
 #!/usr/bin/env python3
 """Bergfex public website adapter. Python standard library + curl only."""
-import datetime as dt
 import hashlib
 from html.parser import HTMLParser
 import json
 import os
 from pathlib import Path
 import re
-import subprocess
+import stat
+import zlib
 import sys
 import tempfile
 import time
 from urllib.parse import urljoin, urlsplit, urlencode
+from urllib.request import Request, build_opener, HTTPRedirectHandler
+
+WIRE_LIMIT = 1024 * 1024
+BODY_LIMIT = 2 * 1024 * 1024
+JSON_LIMIT = 256 * 1024
+STATE_LIMIT = 16 * 1024
+TREE_NODES = 30000
+TREE_DEPTH = 96
 
 BASE = "https://www.bergfex.at"
 STATE = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "omarchy/bergfex-weather/location.json"
@@ -41,11 +49,17 @@ class Node:
 class Tree(HTMLParser):
     def __init__(self, html):
         super().__init__(convert_charrefs=True)
+        if len(html.encode("utf-8")) > BODY_LIMIT:
+            raise ValueError("HTML size limit exceeded")
+        self.node_count = 0
         self.root = Node()
         self.stack = [self.root]
         self.feed(html)
 
     def handle_starttag(self, tag, attrs):
+        self.node_count += 1
+        if self.node_count > TREE_NODES or len(self.stack) >= TREE_DEPTH:
+            raise ValueError("HTML complexity limit exceeded")
         node = Node(tag, attrs)
         self.stack[-1].children.append(node)
         if tag not in {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}:
@@ -74,11 +88,55 @@ def weather_url(value):
     return BASE + url.path
 
 
+class NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ValueError("Unexpected Bergfex redirect")
+
+
+def read_response(response):
+    """Bound wire reads and inflater output before allocating/parsing a body."""
+    encoding = response.headers.get("Content-Encoding", "identity").strip().lower()
+    if encoding not in {"identity", "gzip"}:
+        raise ValueError("Unsupported content encoding")
+    length = response.headers.get("Content-Length")
+    if length is not None and (not length.isdigit() or int(length) > WIRE_LIMIT):
+        raise ValueError("Response wire size limit exceeded")
+    inflater = zlib.decompressobj(16 + zlib.MAX_WBITS) if encoding == "gzip" else None
+    body = bytearray()
+    wire = 0
+    deadline = time.monotonic() + 25
+    while True:
+        if time.monotonic() >= deadline:
+            raise ValueError("Response deadline exceeded")
+        chunk = response.read1(min(16384, WIRE_LIMIT - wire + 1))
+        if not chunk:
+            break
+        wire += len(chunk)
+        if wire > WIRE_LIMIT:
+            raise ValueError("Response wire size limit exceeded")
+        if inflater:
+            # max_length prevents a compressed bomb from allocating its expansion.
+            chunk = inflater.decompress(chunk, BODY_LIMIT - len(body) + 1)
+            if inflater.unconsumed_tail or inflater.unused_data:
+                raise ValueError("Oversized or trailing gzip data")
+        if len(body) + len(chunk) > BODY_LIMIT:
+            raise ValueError("Response decoded size limit exceeded")
+        body.extend(chunk)
+    if inflater and not inflater.eof:
+        raise ValueError("Truncated gzip response")
+    return body.decode("utf-8")
+
+
 def fetch(url):
-    result = subprocess.run(["curl", "--fail", "--silent", "--show-error", "--compressed", "--proto", "=https", "--connect-timeout", "8", "--max-time", "25", url], capture_output=True, timeout=30)
-    if result.returncode:
-        raise ValueError("Bergfex ist gerade nicht erreichbar. Bitte erneut versuchen.")
-    return result.stdout.decode("utf-8")
+    parsed = urlsplit(url)
+    if parsed.scheme != "https" or parsed.netloc != "www.bergfex.at":
+        raise ValueError("Unexpected response origin")
+    request = Request(url, headers={"Accept-Encoding": "gzip", "User-Agent": "Omarchy-Bergfex-Weather/1.1"})
+    try:
+        with build_opener(NoRedirect).open(request, timeout=8) as response:
+            return read_response(response)
+    except (OSError, zlib.error) as error:
+        raise ValueError("Bergfex-Abruf fehlgeschlagen.") from error
 
 
 def atomic_json(path, data):
@@ -93,11 +151,39 @@ def atomic_json(path, data):
             os.unlink(name)
 
 
-def read_json(path, default=None):
+def read_json(path, default=None, limit=JSON_LIMIT):
+    """Open every component without symlink traversal; validate the opened inode."""
+    directory = None
+    fd = None
     try:
-        return json.loads(path.read_text())
-    except (OSError, ValueError):
+        parts = Path(os.path.abspath(path)).parts
+        directory = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+        for part in parts[1:-1]:
+            next_fd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            os.close(directory)
+            directory = next_fd
+        fd = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid() or before.st_size > limit:
+            return default
+        chunks = bytearray()
+        while len(chunks) <= limit:
+            chunk = os.read(fd, min(16384, limit + 1 - len(chunks)))
+            if not chunk:
+                break
+            chunks.extend(chunk)
+        after = os.fstat(fd)
+        if len(chunks) > limit or (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+            return default
+        data = json.loads(chunks)
+        return data if isinstance(data, dict) else default
+    except (OSError, ValueError, RecursionError):
         return default
+    finally:
+        if fd is not None:
+            os.close(fd)
+        if directory is not None:
+            os.close(directory)
 
 
 def number(text):
@@ -185,7 +271,7 @@ def forecast(url, force=False):
         report = parse_weather(fetch(url), url)
         atomic_json(cache_file, report)
         return report
-    except (ValueError, OSError, subprocess.TimeoutExpired):
+    except (ValueError, OSError):
         if cached:
             return dict(cached, stale=True, warning="Abruf fehlgeschlagen – gespeicherte Wetterdaten.")
         raise
@@ -200,7 +286,7 @@ def main(args):
             return {"results": [{"name": "Bergfex-Ort", "url": url, "description": urlsplit(url).path}]}
         return {"results": parse_search(fetch(BASE + "/api/web/search/global?" + urlencode({"type": "header", "q": query}))) if len(query) >= 3 else []}
     if action == "location":
-        return read_json(STATE, {})
+        return read_json(STATE, {}, limit=STATE_LIMIT)
     if action == "select":
         url = weather_url(args[1])
         report = forecast(url)
@@ -209,7 +295,7 @@ def main(args):
         atomic_json(STATE, {"name": report["name"], "url": url})
         return {"report": report}
     if action == "weather":
-        location = read_json(STATE, {})
+        location = read_json(STATE, {}, limit=STATE_LIMIT)
         return {"report": forecast(location["url"], "--force" in args)} if location.get("url") else {"needsLocation": True}
     raise ValueError("Unbekannter Befehl")
 

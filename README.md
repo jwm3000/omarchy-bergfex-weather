@@ -1,7 +1,7 @@
 # Bergfex Wetter für Omarchy
 
 Omarchy-Bar-Plug-in `io.github.jwm3000.bergfex-weather`, mit dem Wetterfenster des internen
-Omarchy-Plug-ins als Grundlage. Benötigt Python 3 und curl.
+Omarchy-Plug-ins als Grundlage. Benötigt Python 3 (nur Standardbibliothek).
 
 ![Bergfex-Wetterfenster in Omarchy](preview.png)
 
@@ -54,13 +54,26 @@ XDG-Verzeichnisse). Zum internen Wetter zurückkehren:
 
 ## Abhängigkeiten und Datenzugriff
 
-Omarchy mit Quickshell-Plug-in-Unterstützung, Python 3 (nur Standardbibliothek)
-und curl. Ausgehende HTTPS-Anfragen gehen an `www.bergfex.at`: Der eingegebene
+Omarchy mit Quickshell-Plug-in-Unterstützung, Python 3 (nur Standardbibliothek). Ausgehende HTTPS-Anfragen gehen an `www.bergfex.at`: Der eingegebene
 Suchtext wird an die öffentliche Ortssuche geschickt; die gewählte Wetterseite
 wird für die Prognose abgerufen. Rechtsklick öffnet diese Seite im Standardbrowser.
 Keine Anmeldung, kein API-Schlüssel, keine zusätzlichen Python-Pakete und keine
 Administratorrechte erforderlich. Schreibzugriffe sind auf den eigenen Standort
 und Wettercache in den oben genannten XDG-Verzeichnissen beschränkt.
+
+## Ressourcenlimits
+
+Der HTTPS-Abruf verwendet einen begrenzten Python-Stream: höchstens 1 MiB
+übertragener Body und 2 MiB nach gzip-Dekomprimierung. Gzip-Ausgabe wird bereits
+im Dekompressor begrenzt; fehlende oder falsche Content-Length-Angaben umgehen
+die Limits nicht. Andere Inhaltskodierungen, Weiterleitungen, unvollständige
+oder verkettete gzip-Streams werden verworfen. HTML ist auf 30.000 Elemente
+und eine Verschachtelungstiefe unter 96 begrenzt.
+
+Cache-Dateien werden bis 256 KiB, Standortdateien bis 16 KiB gelesen. Alle
+Pfadkomponenten werden ohne Symlink-Verfolgung geöffnet. Vor dem Lesen wird am
+geöffneten Dateideskriptor geprüft, dass die Datei regulär ist und dem aktuellen
+Benutzer gehört. Auch während des Lesens wachsende Dateien bleiben begrenzt.
 
 ## Entwicklung
 

@@ -1,3 +1,7 @@
+import gzip
+import io
+import os
+from types import SimpleNamespace
 import json
 from pathlib import Path
 import tempfile
@@ -63,6 +67,87 @@ class AdapterTests(unittest.TestCase):
             b.atomic_json(b.STATE, {'name': 'Bisheriger Ort', 'url': URL})
             with self.assertRaises(ValueError): b.main(['select', URL])
             self.assertEqual(b.read_json(b.STATE)['name'], 'Bisheriger Ort')
+
+
+class Response(io.BytesIO):
+    def __init__(self, data, **headers):
+        super().__init__(data)
+        self.headers = headers
+        self.read_sizes = []
+
+    def read1(self, size):
+        self.read_sizes.append(size)
+        return super().read1(size)
+
+
+class ResourceLimitTests(unittest.TestCase):
+    def test_identity_and_gzip(self):
+        self.assertEqual(b.read_response(Response(b"hello")), "hello")
+        self.assertEqual(b.read_response(Response(gzip.compress(b"hello"), **{"Content-Encoding": "gzip"})), "hello")
+
+    def test_wire_limit_without_length_and_with_false_length(self):
+        for headers in ({}, {"Content-Length": "1"}):
+            response = Response(b"x" * 101, **headers)
+            with patch.object(b, "WIRE_LIMIT", 100), self.assertRaises(ValueError):
+                b.read_response(response)
+            self.assertLessEqual(response.tell(), 101)
+            self.assertLessEqual(max(response.read_sizes), 101)
+
+    def test_large_declared_length_never_reads(self):
+        response = Response(b"x", **{"Content-Length": str(b.WIRE_LIMIT + 1)})
+        with self.assertRaises(ValueError): b.read_response(response)
+        self.assertEqual(response.read_sizes, [])
+
+    def test_gzip_bomb_and_exact_boundary(self):
+        with patch.object(b, "BODY_LIMIT", 100):
+            self.assertEqual(b.read_response(Response(gzip.compress(b"x" * 100), **{"Content-Encoding": "gzip"})), "x" * 100)
+            with self.assertRaises(ValueError):
+                b.read_response(Response(gzip.compress(b"x" * 1000000), **{"Content-Encoding": "gzip"}))
+
+    def test_compressed_wire_limit(self):
+        response = Response(gzip.compress(os.urandom(200)), **{"Content-Encoding": "gzip"})
+        with patch.object(b, "WIRE_LIMIT", 100), self.assertRaises(ValueError):
+            b.read_response(response)
+
+    def test_gzip_truncation_trailing_data_and_unsupported_encoding(self):
+        for data, encoding in [(gzip.compress(b"hello")[:-2], "gzip"), (gzip.compress(b"hi") + gzip.compress(b"there"), "gzip"), (b"hello", "br")]:
+            with self.assertRaises(ValueError):
+                b.read_response(Response(data, **{"Content-Encoding": encoding}))
+
+    def test_tree_complexity(self):
+        with self.assertRaises(ValueError): b.Tree("<div>" * b.TREE_DEPTH)
+        with patch.object(b, "TREE_NODES", 3), self.assertRaises(ValueError):
+            b.Tree("<br>" * 4)
+
+    def test_safe_file_reads(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "data.json"
+            path.write_text('{"ok":true}')
+            self.assertEqual(b.read_json(path), {"ok": True})
+            self.assertIsNone(b.read_json(path, limit=2))
+            link = Path(directory) / "link"
+            link.symlink_to(path)
+            self.assertIsNone(b.read_json(link))
+            parent_link = Path(directory) / "parent"
+            parent_link.symlink_to(directory, target_is_directory=True)
+            self.assertIsNone(b.read_json(parent_link / "data.json"))
+            fifo = Path(directory) / "fifo"
+            os.mkfifo(fifo)
+            self.assertIsNone(b.read_json(fifo))
+            self.assertIsNone(b.read_json(Path(directory)))
+            actual = os.stat(path)
+            wrong_owner = SimpleNamespace(st_mode=actual.st_mode, st_uid=os.getuid() + 1, st_size=actual.st_size)
+            with patch.object(b.os, "fstat", return_value=wrong_owner), patch.object(b.os, "read") as read:
+                self.assertIsNone(b.read_json(path))
+                read.assert_not_called()
+
+    def test_growing_file_read_is_bounded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "data.json"
+            path.write_text('{}')
+            with patch.object(b.os, "read", side_effect=lambda fd, count: b"x" * count) as read:
+                self.assertIsNone(b.read_json(path, limit=100))
+                self.assertEqual(sum(call.args[1] for call in read.call_args_list), 101)
 
 
 if __name__ == '__main__': unittest.main()
