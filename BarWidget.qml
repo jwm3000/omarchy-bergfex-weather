@@ -49,6 +49,9 @@ BarWidget {
   visible: panelLoader.item && panelLoader.item.label !== ""
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
+  // Match the full visible icon/temperature row, excluding the slot padding.
+  readonly property real openPanelIndicatorWidth: Style.bar.iconCanvas
+    + (button.temperature !== "" ? Style.space(6) + temperatureMetrics.width : 0)
 
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
@@ -64,41 +67,46 @@ BarWidget {
     }
   }
 
-  BarIconButton {
+  WidgetButton {
     id: button
     anchors.fill: parent
     bar: root.bar
     text: panelLoader.item ? panelLoader.item.label : ""
     readonly property string temperature: panelLoader.item && panelLoader.item.showBarTemperature && panelLoader.item.reportTempNum !== "" ? panelLoader.item.reportTempNum + "°" : ""
-    slotSize: Style.bar.statusSlot + (temperature !== "" ? temperatureMetrics.width + Style.space(6) : 0)
+    labelVisible: false
+    readonly property real slotSize: Style.bar.statusSlot + (temperature !== "" ? temperatureMetrics.width + Style.space(6) : 0)
+    fixedWidth: vertical ? -1 : slotSize
+    fixedHeight: vertical ? slotSize : -1
     TextMetrics {
       id: temperatureMetrics
       text: button.temperature
       font.family: button.fontFamily
       font.pixelSize: Style.font.body
     }
-    iconComponent: Component {
-      Row {
-        anchors.centerIn: parent
-        spacing: button.temperature !== "" ? Style.space(6) : 0
-        OpticalGlyph {
-          width: Style.bar.iconCanvas
-          height: Style.bar.iconCanvas
-          text: button.text
-          fontFamily: button.fontFamily
-          fontSize: Style.bar.iconFont
-          color: button.foreground
-          anchors.verticalCenter: parent.verticalCenter
-        }
-        Text {
-          visible: button.temperature !== ""
-          text: button.temperature
-          textFormat: Text.PlainText
-          font.family: button.fontFamily
-          font.pixelSize: Style.font.body
-          color: button.foreground
-          anchors.verticalCenter: parent.verticalCenter
-        }
+    // This is an icon plus a text label, not a single custom icon. Keep it
+    // outside BarIconContent, which scales its entire contents to iconSize.
+    Row {
+      anchors.centerIn: parent
+      scale: button.pressScale
+      spacing: button.temperature !== "" ? Style.space(6) : 0
+      OpticalGlyph {
+        width: Style.bar.iconCanvas
+        height: Style.bar.iconCanvas
+        text: button.text
+        fontFamily: button.fontFamily
+        fontSize: Style.bar.iconFont
+        paintedSize: Style.bar.iconSize
+        color: button.foreground
+        anchors.verticalCenter: parent.verticalCenter
+      }
+      Text {
+        visible: button.temperature !== ""
+        text: button.temperature
+        textFormat: Text.PlainText
+        font.family: button.fontFamily
+        font.pixelSize: Style.font.body
+        color: button.foreground
+        anchors.verticalCenter: parent.verticalCenter
       }
     }
     // Tooltip suppressed because the panel is the detail view.
